@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/home/cynops/tools/pentesting/bin/python
 # SECUREAUTH LABS. Copyright 2018 SecureAuth Corporation. All rights reserved.
 #
 # This software is provided under under a slightly modified version
@@ -60,9 +60,9 @@ class GetADUsers:
         self.baseDN = self.baseDN[:-1]
 
         # Let's calculate the header and format
-        self.__header = ["Name", "Email", "PasswordLastSet", "LastLogon"]
+        self.__header = ["Name", "Email", "PasswordLastSet", "LastLogon", "Description"]
         # Since we won't process all rows at once, this will be fixed lengths
-        self.__colLen = [20, 30, 19, 19]
+        self.__colLen = [20, 30, 30, 30,20]
         self.__outputFormat = ' '.join(['{%d:%ds} ' % (num, width) for num, width in enumerate(self.__colLen)])
 
 
@@ -94,6 +94,7 @@ class GetADUsers:
         pwdLastSet = ''
         mail = ''
         lastLogon = 'N/A'
+        description = ''
         try:
             for attribute in item['attributes']:
                 if str(attribute['type']) == 'sAMAccountName':
@@ -112,8 +113,10 @@ class GetADUsers:
                         lastLogon = str(datetime.fromtimestamp(self.getUnixTime(int(str(attribute['vals'][0])))))
                 elif str(attribute['type']) == 'mail':
                     mail = str(attribute['vals'][0])
+                elif str(attribute['type']) == 'description':
+                    description= attribute['vals'][0].asOctets().decode('utf-8')
 
-            print((self.__outputFormat.format(*[sAMAccountName, mail, pwdLastSet, lastLogon])))
+            print((self.__outputFormat.format(*[sAMAccountName, mail, pwdLastSet, lastLogon, description])))
         except Exception as e:
             logging.debug("Exception", exc_info=True)
             logging.error('Skipping item, cannot process due to error %s' % str(e))
@@ -168,7 +171,7 @@ class GetADUsers:
             logging.debug('Search Filter=%s' % searchFilter)
             sc = ldap.SimplePagedResultsControl(size=100)
             ldapConnection.search(searchFilter=searchFilter,
-                                  attributes=['sAMAccountName', 'pwdLastSet', 'mail', 'lastLogon'],
+                                  attributes=['sAMAccountName', 'pwdLastSet', 'mail', 'lastLogon', 'description'],
                                   sizeLimit=0, searchControls = [sc], perRecordCallback=self.processRecord)
         except ldap.LDAPSearchError:
                 raise
@@ -220,7 +223,15 @@ if __name__ == '__main__':
         logging.getLogger().setLevel(logging.INFO)
 
     import re
-    domain, username, password = re.compile('(?:(?:([^/:]*)/)?([^:]*)(?::(.*))?)?').match(options.target).groups('')
+    # This is because I'm lazy with regex
+    # ToDo: We need to change the regex to fullfil domain/username[:password]
+    targetParam = options.target+'@'
+    domain, username, password, address = re.compile('(?:(?:([^/@:]*)/)?([^@:]*)(?::([^@]*))?@)?(.*)').match(targetParam).groups('')
+
+    #In case the password contains '@'
+    if '@' in address:
+        password = password + '@' + address.rpartition('@')[0]
+        address = address.rpartition('@')[2]
 
     if domain == '':
         logging.critical('Domain should be specified!')
